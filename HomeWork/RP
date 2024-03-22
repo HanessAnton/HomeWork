@@ -1,0 +1,103 @@
+use pebbles_game_io::{PebblesInit, DifficultyLevel, GameState, Player};
+use gstd::prelude::*;
+
+pub fn init() {
+    // Получаем инициализационные данные
+    let init_data = msg::load::<PebblesInit>();
+
+    // Проверяем корректность входных данных
+    assert!(init_data.pebbles_count > 0, "Pebbles count must be greater than 0");
+    assert!(init_data.max_pebbles_per_turn > 0, "Max pebbles per turn must be greater than 0");
+
+    // Выбираем первого игрока случайным образом
+    let first_player = if exec::random(0) % 2 == 0 {
+        Player::User
+    } else {
+        Player::Program
+    };
+
+    // Создаем состояние игры
+    let game_state = GameState {
+        pebbles_count: init_data.pebbles_count,
+        max_pebbles_per_turn: init_data.max_pebbles_per_turn,
+        pebbles_remaining: init_data.pebbles_count,
+        difficulty: init_data.difficulty,
+        first_player: first_player,
+        winner: None,
+    };
+
+    // Отправляем состояние игры
+    msg::reply(game_state);
+}
+
+
+use pebbles_game_io::{PebblesAction, PebblesEvent, GameState, DifficultyLevel, Player};
+use gstd::prelude::*;
+
+pub fn handle() {
+    // Получаем действие от игрока
+    let action = msg::load::<PebblesAction>();
+
+    // Получаем текущее состояние игры
+    let mut game_state = msg::load::<GameState>();
+
+    // Проверяем корректность входных данных
+    match action {
+        PebblesAction::Turn(count) => {
+            assert!(count > 0 && count <= game_state.max_pebbles_per_turn, "Invalid number of pebbles to remove");
+            assert!(count <= game_state.pebbles_remaining, "Cannot remove more pebbles than remaining");
+        }
+        PebblesAction::GiveUp => {}
+        PebblesAction::Restart { difficulty, pebbles_count, max_pebbles_per_turn } => {
+            // Обновляем состояние игры при перезапуске
+            game_state.pebbles_count = pebbles_count;
+            game_state.max_pebbles_per_turn = max_pebbles_per_turn;
+            game_state.pebbles_remaining = pebbles_count;
+            game_state.difficulty = difficulty;
+            game_state.winner = None;
+        }
+    }
+
+    // Обрабатываем ход пользователя
+    match action {
+        PebblesAction::Turn(count) => {
+            game_state.pebbles_remaining -= count;
+            if game_state.pebbles_remaining == 0 {
+                game_state.winner = Some(Player::User);
+            }
+        }
+        PebblesAction::GiveUp => {
+            game_state.winner = Some(Player::Program);
+        }
+        PebblesAction::Restart { .. } => {} // Не требуется обработка, так как состояние уже обновлено
+    }
+
+    // Если игра еще не окончена, делаем ход программы
+    if game_state.winner.is_none() {
+        match game_state.difficulty {
+            DifficultyLevel::Easy => {
+                let random_count = get_random_u32() % game_state.max_pebbles_per_turn + 1;
+                game_state.pebbles_remaining -= random_count;
+                if game_state.pebbles_remaining == 0 {
+                    game_state.winner = Some(Player::Program);
+                }
+            }
+            DifficultyLevel::Hard => {
+                // Найти оптимальное количество камешков для удаления на сложном уровне
+                // Это может быть дополнительная логика, которую нужно добавить
+            }
+        }
+    }
+
+    // Отправляем событие обновленного состояния игры
+    msg::reply(game_state);
+}
+
+
+use pebbles_game_io::{GameState};
+use gstd::prelude::*;
+
+pub fn state() {
+    let game_state = msg::load::<GameState>();
+    msg::reply(game_state);
+}
